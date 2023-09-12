@@ -6,15 +6,14 @@ public static class PlaywrightExtensions
 {
     public static async ValueTask GotoAndWaitForReadyAsync(this IPage page, string url)
     {
-        var waiter = page.WaitForBlazorHasBeenStarted();
         await page.GotoAsync(url);
-        await waiter;
+        await page.WaitForBlazorHasBeenStarted();
         await Task.Delay(200);
     }
 
-    public static async ValueTask WaitForAsync(this IPage page, Func<IPage, ValueTask<bool>> predictAsync, bool throwOnTimeout = true)
+    public static async ValueTask WaitForAsync(this IPage page, Func<IPage, ValueTask<bool>> predictAsync, bool throwOnTimeout = true, int millisecondsTimeout = 5000)
     {
-        var canceller = new CancellationTokenSource(millisecondsDelay: 5000);
+        var canceller = new CancellationTokenSource(millisecondsTimeout);
         do
         {
             if (await predictAsync(page)) return;
@@ -23,9 +22,20 @@ public static class PlaywrightExtensions
         if (throwOnTimeout) throw new OperationCanceledException(canceller.Token);
     }
 
+    /// <summary>
+    /// Wait for the Blazor app has been started (hydraded).
+    /// </summary>
     public static async ValueTask WaitForBlazorHasBeenStarted(this IPage page)
     {
-        await page.WaitForConsoleMessageAsync(new() { Predicate = message => message.Text == "Blazor has been started." });
+        // NOTICE:
+        // To do that, this code waits for the loading spinner to disappear.
+        // Therefore, this algorithm can apply to an ordinal Blazor WebAssembly app only.
+        // Due to Blazor Server apps or Pre-rendered Blazor Wasm apps not having the loading spinner,
+        // this algorithm doesn't work for them.
+        await page.WaitForAsync(async _ =>
+        {
+            return await page.Locator("#app .loading-progress").CountAsync() == 0;
+        }, millisecondsTimeout: 30000);
     }
 
     public static async ValueTask AssertEqualsAsync<T>(this IPage page, Func<IPage, Task<T>> selector, T expectedValue)
